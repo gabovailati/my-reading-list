@@ -57,9 +57,9 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def basic_auth_middleware(request: Request, call_next):
-        if request.url.path == "/telegram/webhook":
+        if request.method == "POST" and request.url.path == "/telegram/webhook":
             return await call_next(request)
-        if not password:
+        if password is None:
             return await call_next(request)
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Basic "):
@@ -68,7 +68,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
                 headers={"WWW-Authenticate": "Basic realm=\"reading-list\""},
             )
         try:
-            decoded = base64.b64decode(auth_header[6:]).decode()
+            decoded = base64.b64decode(auth_header[6:], validate=True).decode()
             username, _, provided_password = decoded.partition(":")
         except Exception:
             return Response(
