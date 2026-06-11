@@ -81,10 +81,30 @@ async def test_webhook_path_bypasses_auth(monkeypatch):
     monkeypatch.setenv("BASIC_AUTH_PASSWORD", "secret")
     app = create_app(database_url=TEST_DB_URL)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        # No credentials — but /telegram/webhook is exempt from Basic Auth
+        # POST /telegram/webhook is exempt — Telegram calls it without Basic Auth
         resp = await c.post("/telegram/webhook", json={})
-        # Router stub returns 404/422; what matters is it's NOT 401
+        # Router stub returns 422; what matters is it's NOT 401
         assert resp.status_code != 401
+
+
+@pytest.mark.asyncio
+async def test_webhook_non_post_method_requires_auth(monkeypatch):
+    monkeypatch.setenv("BASIC_AUTH_PASSWORD", "secret")
+    app = create_app(database_url=TEST_DB_URL)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        # Only POST is exempt — other methods must still pass through auth
+        resp = await c.get("/telegram/webhook")
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_basic_auth_empty_password_fails_closed(monkeypatch):
+    # An empty string must NOT disable auth (only None/unset disables it)
+    monkeypatch.setenv("BASIC_AUTH_PASSWORD", "")
+    app = create_app(database_url=TEST_DB_URL)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        resp = await c.get("/nonexistent")
+        assert resp.status_code == 401
 
 
 @pytest.mark.asyncio
