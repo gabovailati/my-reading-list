@@ -82,3 +82,17 @@ Each item was considered during `/plan-eng-review` and explicitly deferred from 
 **Context:** Explicitly post-MVP. The design originally mentioned this as "AI-assisted organization." Add after the label system (T4) is in place — auto-tagging is most useful when there's a label taxonomy to suggest into.
 
 **Depends on:** T4 (Labels) — auto-tagging needs a label system to write into.
+
+---
+
+## T6 — Composite index on `(user_id, read)`
+
+**What:** Add `Index("ix_items_user_read", items.c.user_id, items.c.read)` to the `items` table definition in `db.py`.
+
+**Why:** `list_items` filters by both `user_id` and `read` with `ORDER BY created_at DESC`. Without a composite index, every list query is a full table scan. Negligible at personal scale but noticeable at 1k+ items.
+
+**Cons:** Tiny write overhead; minimal schema complexity.
+
+**Context:** Acceptable at MVP scale. Add when the list grows or before multi-user lands (each user would have their own scan otherwise).
+
+**Depends on:** T2 (Alembic) — the index addition is a migration, not a `create_all` change (existing DBs won't auto-add it).

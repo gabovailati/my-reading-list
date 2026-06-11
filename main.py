@@ -1,9 +1,9 @@
+import base64
+import hmac
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request, Response
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI, Request, Response
 
 from db import create_engine, init_db
 from routers import items as items_router
@@ -20,35 +20,35 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Ensure data directory exists for file-based databases
-        if "/:memory:" not in db_url and ":memory:" not in db_url:
-            import pathlib
-            db_path = db_url.replace("sqlite+aiosqlite:///", "")
-            pathlib.Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-
-        await init_db(engine)
-
-        # Bot startup — implemented in Issue #5 (bot.py)
         bot_app = None
         try:
-            from bot import create_bot_app, start_bot, stop_bot  # noqa: PLC0415
-            bot_mode = os.getenv("BOT_MODE", "polling")
-            bot_app = create_bot_app(mode=bot_mode)
-            await start_bot(bot_app, mode=bot_mode)
-        except ImportError:
-            pass  # bot.py not yet implemented
+            # Ensure data directory exists for file-based databases
+            if "/:memory:" not in db_url and ":memory:" not in db_url:
+                import pathlib
+                db_path = db_url.replace("sqlite+aiosqlite:///", "")
+                pathlib.Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
-        app.state.engine = engine
-        yield
+            await init_db(engine)
 
-        if bot_app is not None:
+            # Bot startup — implemented in Issue #5 (bot.py)
             try:
-                from bot import stop_bot  # noqa: PLC0415
-                await stop_bot(bot_app, mode=os.getenv("BOT_MODE", "polling"))
+                from bot import create_bot_app, start_bot, stop_bot  # noqa: PLC0415
+                bot_mode = os.getenv("BOT_MODE", "polling")
+                bot_app = create_bot_app(mode=bot_mode)
+                await start_bot(bot_app, mode=bot_mode)
             except ImportError:
-                pass
+                pass  # bot.py not yet implemented
 
-        await engine.dispose()
+            app.state.engine = engine
+            yield
+        finally:
+            if bot_app is not None:
+                try:
+                    from bot import stop_bot  # noqa: PLC0415
+                    await stop_bot(bot_app, mode=os.getenv("BOT_MODE", "polling"))
+                except ImportError:
+                    pass
+            await engine.dispose()
 
     app = FastAPI(lifespan=lifespan)
 
@@ -61,7 +61,6 @@ def create_app(database_url: str | None = None) -> FastAPI:
             return await call_next(request)
         if not password:
             return await call_next(request)
-        import base64
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Basic "):
             return Response(
@@ -77,7 +76,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
                 headers={"WWW-Authenticate": "Basic realm=\"reading-list\""},
             )
         expected_username = os.getenv("BASIC_AUTH_USERNAME", "admin")
-        if username != expected_username or provided_password != password:
+        if not hmac.compare_digest(username, expected_username) or not hmac.compare_digest(provided_password, password):
             return Response(
                 "Unauthorized", status_code=401,
                 headers={"WWW-Authenticate": "Basic realm=\"reading-list\""},

@@ -13,7 +13,7 @@ TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 
 @pytest.mark.asyncio
-async def test_startup_creates_items_table(client):
+async def test_startup_creates_items_table():
     # If the table wasn't created the app wouldn't boot — smoke test
     app = create_app(database_url=TEST_DB_URL)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
