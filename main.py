@@ -1,4 +1,5 @@
 import base64
+import hmac
 import os
 from contextlib import asynccontextmanager
 
@@ -9,9 +10,9 @@ def _valid_basic_auth(credentials: str, username: str, password: str) -> bool:
     if not credentials.startswith("Basic "):
         return False
     try:
-        decoded = base64.b64decode(credentials[6:]).decode("utf-8")
+        decoded = base64.b64decode(credentials[6:], validate=True).decode("utf-8")
         user, pwd = decoded.split(":", 1)
-        return user == username and pwd == password
+        return hmac.compare_digest(user, username) and hmac.compare_digest(pwd, password)
     except Exception:
         return False
 
@@ -23,13 +24,14 @@ def create_app(database_url: str = "sqlite+aiosqlite:///data/reading_list.db") -
         yield
 
     app = FastAPI(lifespan=lifespan)
+    app.state.database_url = database_url
 
     @app.middleware("http")
     async def basic_auth_middleware(request: Request, call_next):
-        if request.url.path == "/telegram/webhook":
+        if request.method == "POST" and request.url.path == "/telegram/webhook":
             return await call_next(request)
         password = os.getenv("BASIC_AUTH_PASSWORD")
-        if not password:
+        if password is None:
             return await call_next(request)
         credentials = request.headers.get("Authorization", "")
         if not _valid_basic_auth(
@@ -40,7 +42,7 @@ def create_app(database_url: str = "sqlite+aiosqlite:///data/reading_list.db") -
             return Response(
                 "Unauthorized",
                 status_code=401,
-                headers={"WWW-Authenticate": "Basic"},
+                headers={"WWW-Authenticate": 'Basic realm="Reading List"'},
             )
         return await call_next(request)
 

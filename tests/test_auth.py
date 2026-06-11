@@ -17,7 +17,6 @@ def app_with_auth(monkeypatch):
     monkeypatch.setenv("BASIC_AUTH_USERNAME", "admin")
     application = create_app()
 
-    from fastapi import FastAPI
     from fastapi.responses import JSONResponse
 
     @application.get("/items")
@@ -70,7 +69,7 @@ async def test_missing_credentials_returns_401(app_with_auth):
     ) as client:
         resp = await client.get("/items")
     assert resp.status_code == 401
-    assert resp.headers.get("WWW-Authenticate") == "Basic"
+    assert resp.headers.get("WWW-Authenticate") == 'Basic realm="Reading List"'
 
 
 @pytest.mark.anyio
@@ -80,7 +79,16 @@ async def test_wrong_password_returns_401(app_with_auth):
     ) as client:
         resp = await client.get("/items", headers={"Authorization": _basic_header("admin", "wrong")})
     assert resp.status_code == 401
-    assert resp.headers.get("WWW-Authenticate") == "Basic"
+    assert resp.headers.get("WWW-Authenticate") == 'Basic realm="Reading List"'
+
+
+@pytest.mark.anyio
+async def test_wrong_username_returns_401(app_with_auth):
+    async with AsyncClient(
+        transport=ASGITransport(app=app_with_auth), base_url="http://test"
+    ) as client:
+        resp = await client.get("/items", headers={"Authorization": _basic_header("wronguser", "secret")})
+    assert resp.status_code == 401
 
 
 @pytest.mark.anyio
@@ -89,4 +97,4 @@ async def test_telegram_webhook_bypasses_auth(app_with_auth):
         transport=ASGITransport(app=app_with_auth), base_url="http://test"
     ) as client:
         resp = await client.post("/telegram/webhook")
-    assert resp.status_code != 401
+    assert resp.status_code == 200
